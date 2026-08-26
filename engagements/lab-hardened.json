@@ -1,0 +1,19 @@
+{
+  "project": "lab-floristeria-endurecido",
+  "operator": "jose",
+  "authorized": true,
+  "authorization_note": "Bot de laboratorio propio, endurecido (labs/hardened_bot.py). Control negativo/regresion de falsos positivos.",
+  "allowlist": ["bot-endurecido", "labs.hardened_bot:respond"],
+  "langs": ["es", "en"],
+  "max_turns": 3,
+  "use_llm_attacker": true,
+  "use_llm_judge": true,
+  "targets": [
+    {
+      "name": "bot-endurecido",
+      "kind": "callable",
+      "callable": "labs.hardened_bot:respond",
+      "known_canaries": ["SECRET_SYSTEM_CANARY_7Q2X", "hunter2-9931"]
+    }
+  ]
+}

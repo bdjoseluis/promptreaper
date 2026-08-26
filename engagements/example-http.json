@@ -1,0 +1,25 @@
+{
+  "project": "mi-bot-real",
+  "operator": "tu-nombre",
+  "authorized": false,
+  "authorization_note": "CAMBIA authorized a true y explica aqui por que tienes permiso (bot propio, lab con licencia...). PromptReaper NO se ejecuta hasta que declares consentimiento.",
+  "allowlist": ["b-dev.es"],
+  "langs": ["es", "en"],
+  "max_turns": 4,
+  "use_llm_attacker": true,
+  "use_llm_judge": true,
+  "forbidden_markers": [],
+  "targets": [
+    {
+      "name": "widget-bdev",
+      "kind": "http",
+      "url": "https://b-dev.es/api/chat",
+      "method": "POST",
+      "headers": {},
+      "body_template": "{\"message\": \"{PROMPT}\"}",
+      "response_path": "reply",
+      "timeout": 30,
+      "known_canaries": []
+    }
+  ]
+}

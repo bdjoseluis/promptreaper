@@ -1,0 +1,6 @@
+# PromptReaper no requiere dependencias externas: usa solo la libreria estandar.
+# Los clientes LLM (Groq/Gemini) se llaman por REST con urllib, sin SDK.
+#
+# Opcional (solo si quieres reemplazar los clientes REST por SDKs oficiales):
+#   groq
+#   google-generativeai
