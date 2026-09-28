@@ -104,6 +104,10 @@ class Report:
     def to_json(self) -> str:
         return json.dumps(self.to_dict(), ensure_ascii=False, indent=2)
 
+    def to_sarif(self) -> str:
+        from .sarif import to_sarif
+        return to_sarif(self)
+
     def to_markdown(self) -> str:
         grade, pts = self.score()
         lines = [
@@ -171,42 +175,91 @@ class Report:
                        "coherente con guardarrailes entrenados sobre todo en ingles.")
         return out
 
+    def _lang_bars_html(self) -> str:
+        es = [f for f in self.findings if f.lang == "es"]
+        en = [f for f in self.findings if f.lang == "en"]
+        if not es or not en:
+            return ""
+        es_hits = sum(1 for f in es if f.is_hit)
+        en_hits = sum(1 for f in en if f.is_hit)
+        es_rate = es_hits / len(es)
+        en_rate = en_hits / len(en)
+        note = ""
+        if es_rate > en_rate:
+            note = ("<p class='note'>Los ataques en <b>español</b> penetraron mas que "
+                    "en ingles — coherente con guardarrailes entrenados sobre todo en ingles.</p>")
+
+        def bar(label, hits, tot, rate, col):
+            return (f"<div class='barrow'><span class='blabel'>{label}</span>"
+                    f"<span class='btrack'><span class='bfill' style='width:{rate*100:.0f}%;"
+                    f"background:{col}'></span></span>"
+                    f"<span class='bval'>{hits}/{tot} ({rate:.0%})</span></div>")
+        return ("<h2>Comparativa de guardarrailes: Español vs Ingles</h2>"
+                + bar("ES", es_hits, len(es), es_rate, "#f59e0b")
+                + bar("EN", en_hits, len(en), en_rate, "#3b82f6")
+                + note)
+
     def to_html(self) -> str:
         grade, pts = self.score()
         color = {"A": "#16a34a", "B": "#65a30d", "C": "#ca8a04",
                  "D": "#ea580c", "F": "#dc2626"}.get(grade, "#666")
-        rows = []
+        sev_color = {"critical": "#dc2626", "high": "#ea580c", "medium": "#ca8a04",
+                     "low": "#65a30d", "info": "#6b7280"}
+        st_color = {"CONFIRMED": "#dc2626", "PLAUSIBLE": "#ca8a04",
+                    "REFUTED": "#16a34a", "ERROR": "#6b7280"}
+
+        cards = []
         for f in sorted(self.findings, key=lambda x: (-SEVERITY_ORDER.get(x.severity, 0),
                                                        x.status != "CONFIRMED")):
             if not f.is_hit:
                 continue
-            rows.append(
-                "<tr>"
-                f"<td><code>{html.escape(f.owasp)}</code></td>"
-                f"<td>{html.escape(_SEV_LABEL.get(f.severity, f.severity))}</td>"
-                f"<td>{html.escape(_STATUS_LABEL.get(f.status, f.status))}</td>"
-                f"<td>{html.escape(f.lang)}</td>"
-                f"<td><code>{html.escape(f.payload_id)}</code></td>"
-                f"<td>{html.escape(f.reason)}</td>"
-                "</tr>"
-            )
-        table = "\n".join(rows) or (
-            "<tr><td colspan='6'>Sin hallazgos: el bot resistio todas las pruebas.</td></tr>")
+            cat = CATALOG.get(f.owasp)
+            title = f"{f.owasp} · {cat.title_es}" if cat else f.owasp
+            evidence = (f"<div class='ev'>Evidencia: <code>{html.escape(f.evidence[:200])}</code></div>"
+                        if f.evidence else "")
+            transcript = html.escape(f.transcript or f.bot_response or "")
+            cards.append(f"""
+<div class="card">
+  <div class="chead">
+    <span class="pill" style="background:{sev_color.get(f.severity,'#555')}">{html.escape(_SEV_LABEL.get(f.severity,f.severity))}</span>
+    <span class="pill" style="background:{st_color.get(f.status,'#555')}">{html.escape(_STATUS_LABEL.get(f.status,f.status))}</span>
+    <span class="ptitle">{html.escape(title)}</span>
+    <span class="meta">{html.escape(f.lang)} · {html.escape(f.technique)} · {f.turns_used} turno/s · conf {f.confidence:.0%} · via {html.escape(f.method)}</span>
+  </div>
+  <div class="reason">{html.escape(f.reason)}</div>
+  {evidence}
+  <details><summary>Ver transcripcion (payload <code>{html.escape(f.payload_id)}</code>)</summary>
+    <pre>{transcript}</pre>
+  </details>
+</div>""")
+        cards_html = "\n".join(cards) or (
+            "<p class='clean'>Sin hallazgos con exito: el bot resistio todas las pruebas.</p>")
         return f"""<!doctype html>
 <html lang="es"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>PromptReaper — {html.escape(self.project)}</title>
 <style>
+ :root{{color-scheme:dark;}}
  body{{font-family:system-ui,Segoe UI,Roboto,sans-serif;background:#0b0f14;color:#e5e7eb;margin:0;padding:2rem;}}
- .wrap{{max-width:900px;margin:auto;}}
- h1{{margin:0 0 .25rem;}} .sub{{color:#9ca3af;font-size:.9rem;}}
+ .wrap{{max-width:920px;margin:auto;}}
+ h1{{margin:0 0 .25rem;}} h2{{margin:1.8rem 0 .6rem;color:#93c5fd;font-size:1.1rem;}}
+ .sub{{color:#9ca3af;font-size:.9rem;}}
  .grade{{display:inline-block;font-size:2.5rem;font-weight:800;color:{color};border:3px solid {color};border-radius:12px;padding:.2rem 1rem;margin:1rem 0;}}
- table{{width:100%;border-collapse:collapse;margin-top:1rem;font-size:.9rem;}}
- th,td{{text-align:left;padding:.5rem;border-bottom:1px solid #1f2937;vertical-align:top;}}
- th{{color:#93c5fd;}} code{{color:#fbbf24;}}
+ code{{color:#fbbf24;}}
+ .card{{background:#111827;border:1px solid #1f2937;border-radius:10px;padding:.8rem 1rem;margin:.7rem 0;}}
+ .chead{{display:flex;flex-wrap:wrap;gap:.5rem;align-items:center;}}
+ .pill{{color:#fff;font-size:.72rem;font-weight:700;padding:.12rem .5rem;border-radius:999px;}}
+ .ptitle{{font-weight:700;}} .meta{{color:#9ca3af;font-size:.8rem;margin-left:auto;}}
+ .reason{{margin:.5rem 0;}} .ev{{font-size:.85rem;color:#cbd5e1;}}
+ details{{margin-top:.5rem;}} summary{{cursor:pointer;color:#93c5fd;font-size:.85rem;}}
+ pre{{white-space:pre-wrap;word-break:break-word;background:#0b0f14;border:1px solid #1f2937;border-radius:8px;padding:.6rem;font-size:.8rem;max-height:340px;overflow:auto;}}
+ .barrow{{display:flex;align-items:center;gap:.6rem;margin:.35rem 0;}}
+ .blabel{{width:2.2rem;font-weight:700;}} .btrack{{flex:1;background:#1f2937;border-radius:999px;height:14px;overflow:hidden;}}
+ .bfill{{display:block;height:100%;}} .bval{{width:8rem;text-align:right;font-size:.85rem;color:#cbd5e1;}}
+ .note{{color:#fbbf24;font-size:.9rem;}} .clean{{color:#16a34a;}}
  .foot{{margin-top:2rem;color:#6b7280;font-size:.8rem;}}
 </style></head><body><div class="wrap">
-<h1>PromptReaper</h1>
+<h1>PromptReaper 🌾💀</h1>
 <div class="sub">Proyecto: {html.escape(self.project)} · Objetivo: {html.escape(self.target_name)}</div>
 <div class="sub">{html.escape(self.started)} → {html.escape(self.finished)} ·
  Atacante: {html.escape(str(self.mode.get('attacker','n/d')))} ·
@@ -215,10 +268,8 @@ class Report:
 <p>Pruebas: <b>{len(self.findings)}</b> · Con exito: <b>{len(self.hits())}</b>
  (confirmadas: <b>{len(self.confirmed())}</b>) ·
  Peor severidad: <b>{html.escape(_SEV_LABEL.get(self.worst_severity(),''))}</b></p>
-<table><thead><tr><th>OWASP</th><th>Severidad</th><th>Estado</th><th>Idioma</th>
-<th>Payload</th><th>Motivo</th></tr></thead>
-<tbody>
-{table}
-</tbody></table>
+{self._lang_bars_html()}
+<h2>Hallazgos ({len(self.hits())})</h2>
+{cards_html}
 <div class="foot">PromptReaper · uso etico y autorizado · objetivos consentidos.</div>
 </div></body></html>"""

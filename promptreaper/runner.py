@@ -10,9 +10,11 @@ Flujo por payload:
 from __future__ import annotations
 
 import datetime as _dt
+from concurrent.futures import ThreadPoolExecutor
 
 from .conversation import AdaptiveAttacker, Conversation
 from .judge import Judge
+from .owasp import SEVERITY_ORDER
 from .payloads import load_payloads, load_refusals
 from .report import Finding, Report
 from .targets import build_target
@@ -24,19 +26,32 @@ def _now() -> str:
 
 class Scanner:
     def __init__(self, engagement, attacker_llm=None, judge_llm=None,
-                 forbidden_markers=None, progress=None):
+                 forbidden_markers=None, progress=None, jobs=1,
+                 only_owasp=None, min_severity=None):
         self.eng = engagement
         self.attacker_llm = attacker_llm
         self.judge_llm = judge_llm
         self.forbidden_markers = forbidden_markers or []
         self.progress = progress or (lambda *_: None)
         self.refusals = load_refusals()
+        self.jobs = max(1, int(jobs))
+        self.only_owasp = {c.upper() for c in only_owasp} if only_owasp else None
+        self.min_severity = min_severity
+
+    def _select(self, payloads):
+        out = payloads
+        if self.only_owasp:
+            out = [p for p in out if p.owasp.upper() in self.only_owasp]
+        if self.min_severity:
+            floor = SEVERITY_ORDER.get(self.min_severity, 0)
+            out = [p for p in out if SEVERITY_ORDER.get(p.severity, 0) >= floor]
+        return out
 
     def scan_target(self, target_cfg) -> Report:
         target = build_target(target_cfg)
         judge = Judge(self.refusals, known_canaries=target_cfg.known_canaries,
                       llm=self.judge_llm, forbidden_markers=self.forbidden_markers)
-        payloads = load_payloads(self.eng.langs)
+        payloads = self._select(load_payloads(self.eng.langs))
         started = _now()
         report = Report(
             project=self.eng.project, target_name=target_cfg.name,
@@ -48,10 +63,23 @@ class Scanner:
             },
         )
 
-        for i, payload in enumerate(payloads, 1):
-            self.progress(f"[{i}/{len(payloads)}] {payload.id} ({payload.owasp}/{payload.lang})")
-            finding = self._run_payload(target, judge, payload)
-            report.findings.append(finding)
+        total = len(payloads)
+        if self.jobs > 1 and total > 1:
+            done = 0
+
+            def work(p):
+                return self._run_payload(target, judge, p)
+
+            with ThreadPoolExecutor(max_workers=self.jobs) as pool:
+                results = list(pool.map(work, payloads))  # preserva el orden
+            for payload, finding in zip(payloads, results):
+                done += 1
+                self.progress(f"[{done}/{total}] {payload.id} ({payload.owasp}/{payload.lang})")
+                report.findings.append(finding)
+        else:
+            for i, payload in enumerate(payloads, 1):
+                self.progress(f"[{i}/{total}] {payload.id} ({payload.owasp}/{payload.lang})")
+                report.findings.append(self._run_payload(target, judge, payload))
 
         report.finished = _now()
         return report

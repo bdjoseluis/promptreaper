@@ -30,6 +30,8 @@ class TargetConfig:
     # Ruta (dot-path) para extraer la respuesta del JSON devuelto. Vacio = texto plano.
     response_path: str = ""
     timeout: int = 30
+    # Reintentos ante error de red/5xx (con backoff exponencial). 0 = sin reintentos.
+    retries: int = 2
     # Callable "modulo:funcion" para objetivos en proceso (labs/tests).
     callable: str = ""
     # Secretos/canarios PLANTADOS que este objetivo conoce (solo labs consentidos).
