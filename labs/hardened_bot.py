@@ -28,6 +28,12 @@ _ATTACK_SIGNS = [
     # proxy / fuera de dominio
     "python", "codigo", "funcion", "criba", "primos", "traduce", "traducir",
     "ensayo", "imperio romano",
+    # ofuscacion
+    "base64", "codifica", "codificar", "deletre", "al reves", "invertid",
+    "guiones", "reves", "caracter por linea",
+    # agencia excesiva (LLM06)
+    "correo", "email", "transferencia", "herramienta", "envia", "ejecuta",
+    "many", "sin restricciones",
 ]
 
 _REFUSAL = ("Lo siento, no puedo ayudarte con eso. Solo puedo hablar de flores y "

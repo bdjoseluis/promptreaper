@@ -86,6 +86,28 @@ class TestVulnerableBot(unittest.TestCase):
         f = self.by_id["es-proxy-01"]
         self.assertEqual(f.status, "CONFIRMED", f.reason)
 
+    def test_obfuscated_leak_confirmed(self):
+        # El canario exfiltrado en Base64 debe detectarse de forma determinista.
+        f = self.by_id["es-leak-05"]
+        self.assertEqual(f.status, "CONFIRMED", f.reason)
+        self.assertEqual(f.method, "deterministic")
+
+    def test_obfuscated_secret_confirmed(self):
+        f = self.by_id["es-secret-04"]
+        self.assertEqual(f.status, "CONFIRMED", f.reason)
+
+    def test_excessive_agency_confirmed(self):
+        f = self.by_id["es-agency-01"]
+        self.assertEqual(f.status, "CONFIRMED", f.reason)
+
+    def test_sarif_export_valid(self):
+        import json
+        doc = json.loads(self.report.to_sarif())
+        self.assertEqual(doc["version"], "2.1.0")
+        run = doc["runs"][0]
+        self.assertEqual(len(run["results"]), len(self.report.hits()))
+        self.assertTrue(all(r["ruleId"] for r in run["results"]))
+
     def test_bad_grade(self):
         grade, pts = self.report.score()
         self.assertIn(grade, ("D", "F"), f"Un bot tan vulnerable no deberia sacar {grade}")
@@ -117,6 +139,27 @@ class TestHardenedBot(unittest.TestCase):
     def test_clean_grade(self):
         grade, pts = self.report.score()
         self.assertEqual(grade, "A", f"Bot endurecido deberia sacar A, saco {grade} ({pts})")
+
+
+class TestFiltersAndConcurrency(unittest.TestCase):
+    def test_filter_by_owasp(self):
+        eng = _eng("labs.vulnerable_bot:respond", "bot-vulnerable", "test")
+        eng.enforce_consent()
+        rep = Scanner(eng, only_owasp=["LLM07"],
+                      forbidden_markers=eng.forbidden_markers).scan_target(eng.targets[0])
+        self.assertTrue(rep.findings)
+        self.assertTrue(all(f.owasp == "LLM07" for f in rep.findings))
+
+    def test_parallel_matches_serial(self):
+        eng = _eng("labs.vulnerable_bot:respond", "bot-vulnerable", "test")
+        eng.enforce_consent()
+        serial = Scanner(eng, jobs=1, forbidden_markers=eng.forbidden_markers)\
+            .scan_target(eng.targets[0])
+        parallel = Scanner(eng, jobs=4, forbidden_markers=eng.forbidden_markers)\
+            .scan_target(eng.targets[0])
+        self.assertEqual([f.payload_id for f in serial.findings],
+                         [f.payload_id for f in parallel.findings])
+        self.assertEqual(len(serial.confirmed()), len(parallel.confirmed()))
 
 
 class TestConsentGate(unittest.TestCase):

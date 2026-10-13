@@ -9,9 +9,12 @@ from __future__ import annotations
 
 import importlib
 import json
+import time
 import urllib.error
 import urllib.request
 from dataclasses import dataclass
+
+_USER_AGENT = "PromptReaper/0.2 (+security-scanner; authorized-use-only)"
 
 
 class TargetError(Exception):
@@ -58,20 +61,39 @@ class HttpTarget(Target):
         # Inserta el prompt saneado para JSON en la plantilla del cuerpo.
         safe = json.dumps(prompt)[1:-1]  # escapa comillas, barras, saltos de linea
         body = self.cfg.body_template.replace("{PROMPT}", safe)
-        headers = {"Content-Type": "application/json", **(self.cfg.headers or {})}
+        headers = {"Content-Type": "application/json", "User-Agent": _USER_AGENT,
+                   **(self.cfg.headers or {})}
         data = body.encode("utf-8")
-        req = urllib.request.Request(
-            self.cfg.url, data=data, headers=headers, method=self.cfg.method or "POST"
-        )
-        try:
-            with urllib.request.urlopen(req, timeout=self.cfg.timeout) as resp:
-                raw = resp.read().decode("utf-8", errors="replace")
-                status = resp.status
-        except urllib.error.HTTPError as exc:
-            raw = exc.read().decode("utf-8", errors="replace") if exc.fp else ""
-            return TargetResponse("", raw, ok=False, error=f"HTTP {exc.code}", status=exc.code)
-        except urllib.error.URLError as exc:
-            return TargetResponse("", "", ok=False, error=str(exc.reason))
+
+        retries = max(0, getattr(self.cfg, "retries", 2))
+        last_err = ""
+        last_status = 0
+        for attempt in range(retries + 1):
+            req = urllib.request.Request(
+                self.cfg.url, data=data, headers=headers, method=self.cfg.method or "POST"
+            )
+            try:
+                with urllib.request.urlopen(req, timeout=self.cfg.timeout) as resp:
+                    raw = resp.read().decode("utf-8", errors="replace")
+                    status = resp.status
+                break  # exito
+            except urllib.error.HTTPError as exc:
+                raw = exc.read().decode("utf-8", errors="replace") if exc.fp else ""
+                last_err, last_status = f"HTTP {exc.code}", exc.code
+                # Reintenta solo ante 429/5xx (transitorios); 4xx restantes no.
+                if exc.code in (429,) or 500 <= exc.code < 600:
+                    if attempt < retries:
+                        time.sleep(2 ** attempt)
+                        continue
+                return TargetResponse("", raw, ok=False, error=last_err, status=exc.code)
+            except urllib.error.URLError as exc:
+                last_err = str(exc.reason)
+                if attempt < retries:
+                    time.sleep(2 ** attempt)
+                    continue
+                return TargetResponse("", "", ok=False, error=last_err)
+        else:  # pragma: no cover - agotados los reintentos por error de red
+            return TargetResponse("", "", ok=False, error=last_err, status=last_status)
 
         text = raw
         if self.cfg.response_path:
