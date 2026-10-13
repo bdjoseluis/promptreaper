@@ -56,6 +56,10 @@ def build_parser() -> argparse.ArgumentParser:
                    help="Que hace devolver codigo de salida 1 (def: confirmed).")
     p.add_argument("--list-payloads", action="store_true",
                    help="Lista la libreria de payloads (segun --only-owasp/--min-severity) y sale.")
+    p.add_argument("--serve", action="store_true",
+                   help="Lanza el PANEL WEB local (interfaz visual) en vez de escanear por CLI.")
+    p.add_argument("--host", default="127.0.0.1", help="Host del panel (def: 127.0.0.1).")
+    p.add_argument("--port", type=int, default=8765, help="Puerto del panel (def: 8765).")
     p.add_argument("--version", action="version", version=f"PromptReaper {__version__}")
     return p
 
@@ -82,6 +86,14 @@ def main(argv=None) -> int:
 
     if args.list_payloads:
         return _do_list_payloads(args)
+
+    if args.serve:
+        # Carga de claves antes de levantar el panel (por si se usa LLM).
+        for path in args.env + _default_env_paths():
+            load_env_file(path)
+        from .webpanel import serve
+        serve(host=args.host, port=args.port, prefer=args.prefer, no_llm=args.no_llm)
+        return 0
 
     if not args.engagement:
         print("Falta el fichero de engagement.\n"

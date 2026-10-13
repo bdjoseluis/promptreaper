@@ -64,6 +64,26 @@ python reaper.py engagements/lab-vulnerable.json -j 8 --only-owasp LLM01,LLM07 -
 python reaper.py --list-payloads --only-owasp LLM06
 ```
 
+### Panel web local (interfaz visual)
+
+```bash
+python reaper.py --serve           # abre http://127.0.0.1:8765
+python reaper.py --serve --port 9000
+```
+
+Interfaz de una sola página (sin dependencias, solo stdlib) para **configurar el
+objetivo, lanzar el escaneo y ver los hallazgos en vivo** sin tocar JSON ni la
+terminal:
+
+- Formulario del objetivo (HTTP o callable): URL, método, `body_template`,
+  `headers`, `response_path`, canarios, idiomas, `max_turns`, `jobs`, filtros.
+- Progreso en tiempo real (SSE) y resultados con **nota A–F**, tarjetas por
+  hallazgo, transcripción expandible y barras **ES vs EN**.
+- Descarga del informe en **HTML / JSON / Markdown / SARIF** con un clic.
+- Escucha **solo en `127.0.0.1`** por defecto. La **puerta de consentimiento**
+  sigue activa: hay que marcar la autorización y el objetivo entra en la
+  allowlist automáticamente; sin ello el panel se niega a escanear.
+
 Salida en `reports/<proyecto>_<objetivo>.{json,md,html}` (y `.sarif` con `--sarif`).
 Código de salida: `1` si hubo hallazgos **confirmados**, `0` si limpio, `2/3` si
 error de configuración / consentimiento. Controla el disparador con
@@ -136,6 +156,7 @@ promptreaper/
   runner.py              Orquestación por payload y objetivo (paralelismo + filtros)
   report.py              Findings + informe JSON/MD/HTML + nota A-F
   sarif.py               Exportación SARIF 2.1.0 para CI (GitHub code scanning)
+  webpanel.py            Panel web local (interfaz visual, --serve)
 data/
   payloads_es.json       ⭐ Payloads en español (núcleo diferencial)
   payloads_en.json       Baseline en inglés (comparativa)
@@ -184,6 +205,7 @@ black-box y se documentan como tal.
 - [x] Exportar a formato SARIF / integrable en CI.
 - [x] Panel HTML con transcripción expandible por hallazgo.
 - [x] Escaneo en paralelo, filtros por categoría/severidad y multi-engagement.
+- [x] Panel web local interactivo (`--serve`): configurar, escanear y ver en vivo.
 - [ ] Reintentos con backoff ante *rate-limit* (hecho para HTTP) y *pacing* configurable.
 
 ---
